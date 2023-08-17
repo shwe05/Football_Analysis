@@ -1,0 +1,493 @@
+---
+title: "Unsupervised"
+output: html_document
+date: "2023-07-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+```{r}
+# Loading the events.csv file
+events <- read.csv("events.csv")
+
+# Loading the ginf.csv file
+ginf<- read.csv("ginf.csv")
+
+str(events)
+```
+
+```{r}
+events<- left_join(events, ginf[,c('id_odsp','league','season','country')], by = "id_odsp")
+```
+
+##Data cleaning process 
+```{r}
+
+events$assist_method <- as.factor(events$assist_method)
+events$id_odsp <- as.factor(events$id_odsp)
+events$league <- as.factor(events$league)
+ginf$league <- as.factor(ginf$league)
+ginf$season <- as.factor(ginf$season)
+events$is_goal <- as.logical(events$is_goal)
+events$is_goal <- as.factor(events$is_goal)
+events$bodypart <- as.factor(events$bodypart)
+
+
+levels(events$league) <- c('Bundesliga','Premier League','Ligue 1','Serie A','La Liga')
+levels(ginf$league) <- c('Bundesliga','Premier League','Ligue 1','Serie A','La Liga')
+
+str(events)
+```
+
+
+```{r} 
+
+# creating dummy variables 
+
+events$Attempt <- ifelse(events$event_type == 1, 1, 0)
+events$Corner <- ifelse(events$event_type == 2, 1, 0)
+events$Foul <- ifelse(events$event_type == 3, 1, 0)
+events$Yellow_Card <- ifelse(events$event_type == 4, 1, 0)
+events$Second_Yellow <- ifelse(events$event_type == 5, 1, 0)
+events$Red_Card <- ifelse(events$event_type == 6, 1, 0)
+events$Substitution <- ifelse(events$event_type == 7, 1, 0)
+events$Free_Kick_Won <- ifelse(events$event_type == 8, 1, 0)
+events$Offside <- ifelse(events$event_type == 9, 1,0) 
+events$Hand_Ball <- ifelse(events$event_type == 10, 1, 0)
+events$Penalty_Conceded <- ifelse(events$event_type == 11, 1, 0)
+
+#  new columns based on event_type2
+events$Key_Pass <- ifelse(events$event_type2 == 12, 1, 0)
+events$Failed_Through_Ball <- ifelse(events$event_type2 == 13, 1, 0)
+events$Sending_Off <- ifelse(events$event_type2 == 14, 1, 0)
+events$Own_Goal <- ifelse(events$event_type2 == 15, 1, 0)
+
+
+# NA to 0
+events$event_type2 <- ifelse(is.na(events$event_type2),0, events$event_type2)
+
+# NA to 0
+events$event_type2[is.na(events$event_type2)] <- 0
+
+
+```
+
+
+### For location of the shot 
+```{r}
+
+events$Attacking_Half <- ifelse(events$location == 1, 1, 0)
+
+events$Defensive_Half <- ifelse(events$location == 2, 1, 0)
+events$Centre_box <- ifelse(events$location == 3, 1, 0)
+events$Left_wing <- ifelse(events$location == 4, 1, 0)
+events$Right_wing <- ifelse(events$location == 5, 1, 0)
+events$Difficult_angle_LongRange <- ifelse(events$location == 6, 1, 0)
+events$Difficult_angle_Left <- ifelse(events$location == 7, 1, 0)
+events$Difficult_angle_Right <- ifelse(events$location == 8, 1, 0)
+events$Left_box <- ifelse(events$location == 9, 1, 0)
+events$Left_box6Yard <- ifelse(events$location == 10, 1,0) 
+events$Right_box <- ifelse(events$location == 11, 1, 0)
+events$Right_box6Yard <- ifelse(events$location == 12, 1, 0)
+events$Close_range <- ifelse(events$location == 13, 1, 0)
+events$Penalty_spot <- ifelse(events$location == 14, 1,0) 
+events$Outside_box <- ifelse(events$location == 15, 1, 0)
+
+events$Long_range <- ifelse(events$location == 16, 1, 0)
+events$Over_35yards <- ifelse(events$location == 17, 1, 0)
+events$Over_40yards <- ifelse(events$location == 18, 1,0) 
+events$Not_recorded <- ifelse(events$location == 19, 1, 0)
+
+
+events$location <- ifelse(is.na(events$location), 0, events$location)
+events$location[is.na(events$location)] <- 0
+
+```
+
+
+
+
+
+```{r}
+
+events$Home <- ifelse(events$side == 1, 1, 0)
+
+events$Away <- ifelse(events$side == 2, 1, 0)
+
+
+
+events$side <- ifelse(is.na(events$side), 0, events$side)
+
+
+events$side[is.na(events$side)] <- 0
+
+```
+
+
+```{r}
+events$Too_high <- ifelse(events$shot_place == 1, 1, 0)
+events$Blocked <- ifelse(events$shot_place == 2, 1, 0)
+events$Bottom_left_corner <- ifelse(events$shot_place == 3, 1, 0)
+events$Bottom_right_corner <- ifelse(events$shot_place == 4, 1, 0)
+events$Centre <- ifelse(events$shot_place == 5, 1, 0)
+events$High_and_wide <- ifelse(events$shot_place == 6, 1, 0)
+events$Bar <- ifelse(events$shot_place == 7, 1, 0)
+events$Miss_to_left <- ifelse(events$shot_place == 8, 1, 0)
+events$Miss_to_right <- ifelse(events$shot_place == 9, 1, 0)
+events$Too_high <- ifelse(events$shot_place == 10, 1,0) 
+events$Top_centre <- ifelse(events$shot_place == 11, 1, 0)
+events$Top_left_corner <- ifelse(events$shot_place == 12, 1, 0)
+events$Top_right_corner <- ifelse(events$shot_place == 13, 1, 0)
+
+
+events$shot_place <- ifelse(is.na(events$shot_place), 0, events$shot_place)
+
+
+events$shot_place[is.na(events$shot_place)] <- 0
+
+```
+
+
+#Shot Outcome 
+```{r}
+events$On_target <- ifelse(events$shot_outcome == 1, 1, 0)
+events$Off_target <- ifelse(events$shot_outcome == 2, 1, 0)
+events$Blocked <- ifelse(events$shot_outcome == 3, 1, 0)
+events$Bar <- ifelse(events$shot_outcome == 4, 1, 0)
+
+
+
+events$shot_outcome <- ifelse(is.na(events$shot_outcome), 0, events$shot_outcome)
+
+
+events$shot_outcome[is.na(events$shot_outcome)] <- 0
+
+```
+
+```{r}
+library(dplyr)
+
+#Duplicated just in case
+#dupe_events <- events
+#dupe_events2 <- dupe_events
+events$Long_range <- NULL
+
+# Verify the changes
+str(events)
+
+```
+
+
+#cleaning
+```{r}
+
+events$Attempt <- as.factor(events$Attempt)
+events$Corner <- as.factor(events$Corner)
+events$Foul <- as.factor(events$Foul)
+events$Yellow_Card <- as.factor(events$Yellow_Card)
+events$Second_Yellow <- as.factor(events$Second_Yellow)
+events$Red_Card <- as.factor(events$Red_Card)
+events$Substitution <- as.factor(events$Substitution)
+
+events$Free_Kick_Won <- as.factor(events$Free_Kick_Won)
+events$Offside <- as.factor(events$Offside)
+events$Hand_Ball <- as.factor(events$Hand_Ball)
+events$Penalty_Conceded <- as.factor(events$Penalty_Conceded)
+events$Key_Pass <- as.factor(events$Key_Pass)
+events$Failed_Through_Ball <- as.factor(events$Failed_Through_Ball)
+events$Sending_Off <- as.factor(events$Sending_Off)
+events$Own_Goal <- as.factor(events$Own_Goal)
+events$Attacking_Half <- as.factor(events$Attacking_Half)
+events$Defensive_Half <- as.factor(events$Defensive_Half)
+events$Centre_box <- as.factor(events$Centre_box)
+events$Left_wing <- as.factor(events$Left_wing)
+events$Right_wing <- as.factor(events$Right_wing)
+events$Difficult_angle_LongRange <- as.factor(events$Difficult_angle_LongRange)
+events$Difficult_angle_Left <- as.factor(events$Difficult_angle_Left)
+events$Difficult_angle_Right <- as.factor(events$Difficult_angle_Right)
+events$Left_box <- as.factor(events$Left_box)
+events$Left_box6Yard <- as.factor(events$Left_box6Yard)
+events$Right_box <- as.factor(events$Right_box)
+events$Right_box6Yard <- as.factor(events$Right_box6Yard)
+events$Close_range <- as.factor(events$Close_range)
+events$Penalty_spot <- as.factor(events$Penalty_spot)
+events$Outside_box <- as.factor(events$Outside_box)
+
+
+events$Over_35yards <- as.factor(events$Over_35yards)
+events$Over_40yards <- as.factor(events$Over_40yards)
+events$Not_recorded <- as.factor(events$Not_recorded)
+events$Home <- as.factor(events$Home)
+events$Away <- as.factor(events$Away)
+events$Too_high <- as.factor(events$Too_high)
+events$Blocked <- as.factor(events$Blocked)
+events$Bottom_left_corner <- as.factor(events$Bottom_left_corner)
+
+events$Bottom_right_corner <- as.factor(events$Bottom_right_corner)
+events$Centre <- as.factor(events$Centre)
+events$High_and_wide <- as.factor(events$High_and_wide)
+events$Bar <- as.factor(events$Bar)
+events$Miss_to_left <- as.factor(events$Miss_to_left)
+events$Miss_to_right <- as.factor(events$Miss_to_right)
+events$Top_centre <- as.factor(events$Top_centre)
+events$Top_left_corner <- as.factor(events$Top_left_corner)
+events$Top_right_corner <- as.factor(events$Top_right_corner)
+events$On_target <- as.factor(events$On_target)
+events$Off_target <- as.factor(events$Off_target)
+events$is_goal <- as.factor(events$is_goal)
+
+```
+
+
+##Correlation (event_type)
+```{r}
+#converting to numeric 
+events[, 17] <- as.numeric(events[, 17])
+events[, 26:74] <- sapply(events[, 26:74], as.numeric)
+
+# selecting columns 17 and 26 to 30
+selected_cols <- c(17, 26:36)
+
+# correlation matrix
+correlation <- cor(events[, selected_cols])
+
+print(correlation)
+
+```
+### We can see that from event_type, there is no variables/predictors that led to a goal. 
+
+
+
+
+###Correlation (event_type2)
+```{r}
+selected_cols <- c(17, 37:40)
+
+
+correlation <- cor(events[, selected_cols])
+
+
+print(correlation)
+
+```
+
+
+
+### Correlation (Shot_place)
+```{r}
+head(events)
+selected_cols <- c(17, 62:72)
+
+
+correlation <- cor(events[, selected_cols])
+
+
+print(correlation)
+
+```
+
+#Bottom Left corner has highest correlation here 0.3
+
+
+#Correlation(location)
+```{r}
+selected_cols <- c(17, 41:58)
+
+
+correlation <- cor(events[, selected_cols])
+
+print(correlation)
+
+
+```
+
+```{r}
+selected_cols <-c(17,26,37,43,54,53)
+
+# calculating the correlation matrix
+correlation <- cor(events[, selected_cols])
+
+
+print(correlation)
+
+
+install.packages("corrplot")
+library(corrplot)
+
+# selecting the desired columns based on significance 
+selected_cols <- c(17, 26, 37, 43, 54, 53)
+
+
+correlation <- cor(events[, selected_cols])
+
+#plotting correlation  
+corrplot(correlation, method = "color", type = "full", tl.col = "black")
+
+
+```
+
+
+```{r}
+#Performing LDA 
+
+library(MASS)
+
+# splitting to train and test 
+set.seed(123)
+train_indices <- sample(1:nrow(events), round(0.7 * nrow(events)), replace = FALSE)
+train <- events[train_indices, ]
+test <- events[-train_indices, ]
+
+# performing LDA on the training set
+lda.fit <- lda(is_goal ~ Attempt + Key_Pass + Centre_box + Penalty_spot + Close_range, data = train)
+
+# predictions
+lda.pred <- predict(lda.fit, newdata = test)
+
+# combining the predicted class with the actual class and test indicator
+results <- cbind(lda.pred$class, test$is_goal, test)
+
+
+print(results)
+
+misclassification <- lda.pred$class != test$is_goal
+
+# calculating the misclassification error rate
+error_rate_LDA <- mean(misclassification)
+print(error_rate_LDA)
+
+
+```
+
+
+#Misclassification rate is 2.4% 
+
+
+###Performing QDA: 
+```{r}
+# performing QDA on the training set
+qda.fit <- qda(is_goal ~ Attempt + Key_Pass + Centre_box + Penalty_spot + Close_range, data = train)
+
+# predictions
+qda.pred <- predict(qda.fit, newdata = test)
+
+# calculating the misclassification error rate
+error_rate_QDA <- mean(qda.pred$class != test$is_goal)
+print(error_rate_QDA)
+
+```
+#11.9% test error rate 
+
+
+###Logistic Regression 
+```{r}
+dupe_events$is_goal <- as.integer(events$is_goal) - 1
+set.seed(123)
+train_indices <- sample(1:nrow(dupe_events), round(0.7 * nrow(dupe_events)), replace = FALSE)
+train <- dupe_events[train_indices, ]
+test <- dupe_events[-train_indices, ]
+
+
+
+# logistic regression
+glm.fit <- glm(is_goal ~ Attempt + Key_Pass + Centre_box + Penalty_spot + Close_range,
+               data = train,
+               family = binomial)
+
+# predicting
+glm.probs <- predict(glm.fit, newdata = test, type = "response")
+
+# threshold
+glm.pred <- ifelse(glm.probs > 0.75, 1, 0)
+
+# calculating the misclassification error rate
+error_rate_LR <- mean(glm.pred != test$is_goal)
+print(error_rate_LR)
+
+
+```
+#2.38% error rate. 
+
+Putting the miscallsification results in a table 
+```{r}
+# converting to % 
+error_rate_LDA_percent <- paste0(round(error_rate_LDA * 100, 2), "%")
+error_rate_QDA_percent <- paste0(round(error_rate_QDA * 100, 2), "%")
+error_rate_LR_percent <- paste0(round(error_rate_LR * 100, 2), "%")
+
+# creating the table
+misclassification_table <- data.frame(
+  Model = c("LDA", "QDA", "Logistic Regression"),
+  Error_Rate = c(error_rate_LDA_percent, error_rate_QDA_percent, error_rate_LR_percent)
+)
+
+kable(misclassification_table, align = c("l", "r"), col.names = c("Model", "Error Rate"))
+
+```
+
+```{r}
+
+library(pROC)
+library(ggplot2)
+
+
+
+# ROC curve
+roc_obj <- roc(test$is_goal, glm.probs)
+
+# plotting 
+plot(roc_obj, main = "Receiver Operating Characteristic (ROC) Curve", print.auc = TRUE)
+
+
+
+```
+
+
+#Table for AUC, F1 Score and Time elapsed 
+
+```{r}
+
+library(pROC)
+library(knitr)
+
+# ROC curve
+roc_obj <- roc(test$is_goal, glm.probs)
+
+# AUC value
+auc_value <- auc(roc_obj)
+
+# f1 score
+f1_score <- 2 * (roc_obj$specificities * roc_obj$sensitivities) / (roc_obj$specificities + roc_obj$sensitivities)
+
+# timing (start)
+start_time <- Sys.time()
+
+
+# timing (ending)
+end_time <- Sys.time()
+
+# time elapsed 
+time_elapsed <- end_time - start_time
+
+# dataframe for table
+results_table <- data.frame(
+  AUC = auc_value,
+  F1_Score = max(f1_score),
+  Time_Elapsed = time_elapsed
+)
+
+#printing the table
+kable(results_table, align = c("c", "c", "c"), col.names = c("AUC", "F1 Score", "Time Elapsed"))
+
+
+```
+

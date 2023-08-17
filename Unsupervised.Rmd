@@ -1,0 +1,481 @@
+---
+title: "PROJECT ME315"
+output: html_document
+date: "2023-06-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading files
+```{r}
+# Loading the events.csv file
+events <- read.csv("events.csv")
+
+# Loading the ginf.csv file
+ginf <- read.csv("ginf.csv")
+
+#library(factoextra)
+library(cluster)
+library(knitr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggfortify)
+```
+
+#Left join ginf to events 
+```{r}
+events <- left_join(events, ginf[,c('id_odsp','league','season','country')], by = "id_odsp")
+```
+
+##Data cleaning process 
+```{r}
+
+events$assist_method <- as.factor(events$assist_method)
+events$id_odsp <- as.factor(events$id_odsp)
+events$league <- as.factor(events$league)
+ginf$league <- as.factor(ginf$league)
+ginf$season <- as.factor(ginf$season)
+events$is_goal <- as.logical(events$is_goal)
+events$bodypart <- as.factor(events$bodypart)
+
+
+levels(events$league) <- c('Bundesliga','Premier League','Ligue 1','Serie A','La Liga')
+levels(ginf$league) <- c('Bundesliga','Premier League','Ligue 1','Serie A','La Liga')
+
+```
+
+
+
+###OVERVIEW 
+```{r}
+ginf$goals <- (ginf$fthg + ginf$ftag)
+goals <- ginf %>% group_by(league) %>% summarise(goals = sum(goals))
+total_matches <- ginf %>% count(league)
+
+ratio <- left_join(total_matches,goals, by = 'league')
+names(ratio)[2] = 'total_matches'
+ratio$goals_per_match <- ratio$goals / ratio$total_matches
+
+ratio <- mutate_each(ratio,funs(round(., 2)),-league) #rounding to 2 dp
+ratio <- arrange(ratio,desc(goals_per_match))
+
+
+#Ratio
+sorted_ratio <- ratio[order(-ratio$goals), ]
+
+#Presenting into a table
+kable(sorted_ratio[, c("league","goals", "total_matches", "goals_per_match")], 
+      col.names = c("League Name", "Goals", "Number of Matches", "Goals per Match"),
+      align = "c")
+
+```
+
+
+
+#There is a correlation with the number of goals you score and the matches you play. 
+```{r}
+# Creating the scatter plot
+scatter_plot <- ggplot(data = ratio, aes(x = goals, y = total_matches, color = league, size = goals_per_match)) +
+  geom_point() +
+  labs(x = "Number of Goals", y = "Number of Matches", title = "Goals vs Matches by League") +
+  scale_color_discrete(name = "League") +  # Add legend title
+  scale_size_continuous(range = c(3, 8)) +
+  theme_minimal()
+
+
+scatter_plot
+
+```
+
+
+
+
+### We see how intense/rough the top 5 leagues are. 
+```{r}
+
+cards_shown <- events[events$event_type %in% c(4, 5, 6),] %>%
+  group_by(league) %>%
+  summarize(total = n())  
+cards_shown$cards_per_match <- round(cards_shown$total / total_matches$n, 2)
+cards_shown <- arrange(cards_shown, cards_per_match) 
+cards_shown$league <- factor(cards_shown$league, levels = cards_shown$league[order(cards_shown$cards_per_match)]) 
+
+
+my_palette <- c("tomato2", "orange", "yellow", "green", "blue")
+
+ggplot(cards_shown, aes(x = league, y = cards_per_match, fill = cards_per_match)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  scale_fill_gradient(low = my_palette[1], high = my_palette[length(my_palette)], guide = "legend") +
+  labs(title = "Cards per Match for each League (Yellow + Red)",
+       x = "League", y = "Cards Per Match") +
+  theme(plot.title = element_text(size = 15, hjust = -0.6),
+        axis.title = element_text(size = 12)) +
+  geom_text(aes(label = cards_per_match), hjust = 2, size = 3, color = 'white') +
+  coord_flip()
+
+
+```
+
+
+```{r}
+
+
+team_goals <- events %>%
+  group_by(event_team) %>%
+  summarise(goals = sum(is_goal == TRUE)) %>%
+  arrange(desc(goals))
+
+team_goals
+
+
+```
+
+### Teams categorised by leagues (Cards per match)
+```{r}
+cards_shown <- events[events$event_type %in% c(4, 5, 6), ] %>%
+  group_by(league, event_team) %>%
+  summarize(total = n())  
+
+total_matches <- events %>%
+  group_by(league) %>%
+  summarize(n = n_distinct(id_odsp))
+
+cards_shown <- left_join(cards_shown, total_matches, by = "league")
+
+cards_shown$cards_per_match <- round(cards_shown$total / cards_shown$n, 2)
+
+cards_shown
+cards_avg <- cards_shown %>%
+  group_by(league) %>%
+  top_n(5, cards_per_match) %>%
+  ungroup()
+
+ggplot(cards_avg, aes(x = reorder(event_team, cards_per_match), y = cards_per_match, fill = league)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  labs(title = "Top 5 Teams: Cards per Match by League", x = "Team", y = "Cards Per Match") +
+  theme(plot.title = element_text(size = 15, hjust = -0.6), axis.title = element_text(size = 12)) +
+  geom_text(aes(label = cards_per_match), hjust = 0.5, vjust = -0.5, size = 3, color = "white") +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set1")
+
+
+
+```
+### Hitting the post 
+
+#Shows that they have taken a lot of shots and chances BUT unlucky :( 
+```{r}
+bars <- events[events$shot_outcome==4, ] %>%
+  group_by(event_team,league) %>%
+  summarize(total = n())
+bars <- bars[with(bars,order(league,-total)),] #sort by league and bars
+barsLeagueTeams <- by(bars, bars$league, function(X) X[1:4,])
+bars <- do.call("rbind", barsLeagueTeams) #get top 4 teams in each league
+bars$event_team <- factor(bars$event_team, levels = bars$event_team[order(bars$total)]) #reorder for plot
+
+ggplot(bars, aes(x = event_team, y = total, fill = league)) +
+  geom_bar(stat = "identity", width = 0.8, color = "black") +
+  labs(title = "Most shots against the goal post (hitting the bar)",
+       x = 'Team', y = 'Total Shots') +
+  geom_text(aes(label = total), vjust = -0.5, size = 3, color = 'black') +
+  theme(plot.title = element_text(size = 17, hjust = -0.7),
+        legend.position = 'bottom') +
+  facet_wrap(~league, nrow = 5, scales = 'free', strip.position = 'right') +
+  coord_flip()
+
+```
+
+
+
+```{r}
+top_goalscorers <- events[events$is_goal, ] %>%
+  group_by(event_team, bodypart) %>%
+  summarize(goals = n()) %>%
+  arrange(desc(goals))
+
+levels(top_goalscorers$bodypart) <- c('Right Foot', 'Left Foot', 'Header')
+top_goalscorers <- top_goalscorers[with(top_goalscorers, order(bodypart, -goals)), ] # Sort by method and team
+top_goalscorers_method <- by(top_goalscorers, top_goalscorers$bodypart, function(X) X[1:5, ])
+top_goalscorers <- do.call("rbind", top_goalscorers_method) # Get top 5 teams in each category
+
+top_goalscorers
+
+ggplot(top_goalscorers, aes(x = event_team, y = goals, fill = bodypart)) +
+  geom_bar(stat = "identity", width = 0.6, color = "black") +
+  labs(title = "Methods of top goal-scoring teams",
+       x = "Team", y = "Total Goals") +
+  geom_text(aes(label = goals), vjust = -0.5, size = 3, color = "black") +
+  theme(plot.title = element_text(size = 17, hjust = -0.7),
+        legend.position = "bottom") +
+  facet_wrap(~ bodypart, scales = "free") +
+  ylim(0, max(top_goalscorers$goals)) +
+  coord_flip()
+```
+
+
+```{r}
+
+library(viridis)
+
+#first 15 minutes 
+first_15 <- events[events$time <= 15, ]
+
+##last 15 minutes 
+last_15 <- events[events$time >= 75 & events$time <= 90, ]
+
+## Grouping by teams 
+top_10_scorer_first_15 <- first_15[first_15$is_goal == 1, ] %>%
+  group_by(event_team) %>%
+  summarize(goals = n()) %>%
+  arrange(desc(goals)) %>%
+  top_n(10)
+
+
+teams <- top_10_scorer_first_15$event_team
+
+scores <- top_10_scorer_first_15$goals
+
+## Plotting 
+ggplot(top_10_scorer_first_15, aes(x = reorder(event_team, goals), y = goals, fill = goals)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_fill_viridis(option = "A", direction = -1) +
+  labs(x = "Teams", y = "# of goals", title = "Most goals in the 1st 15 minutes") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        legend.position = "none") +
+  coord_flip()
+
+#----------------------------------------------------------------------------------------------------------------
+## Grouping by teams 
+top_10_scorer_last_15 <- last_15[last_15$is_goal == 1, ] %>%
+  group_by(event_team) %>%
+  summarize(goals = n()) %>%
+  arrange(desc(goals)) %>%
+  top_n(10)
+
+
+teams_last_15 <- top_10_scorer_last_15$event_team
+
+scores_last_15 <- top_10_scorer_last_15$goals
+
+## Plotting
+ggplot(top_10_scorer_last_15, aes(x = reorder(event_team, goals), y = goals, fill = goals)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_fill_viridis(option = "A", direction = -1) +
+  labs(x = "Teams", y = "Number of goals", title = "Most goals in the last 15 minutes") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        legend.position = "none") +
+  coord_flip()
+
+```
+
+### Extracting all the factors above 
+```{r}
+
+
+team_goals <- events %>%
+  group_by(event_team) %>%
+  summarize(goals = sum(is_goal == TRUE))
+
+
+team_cards <- events %>%
+  filter(event_type %in% c(4, 5, 6)) %>%
+  group_by(event_team) %>%
+  summarize(cards = n()) 
+
+team_post_hits <- events %>%
+  filter(shot_outcome == 4) %>%
+  group_by(event_team) %>%
+  summarize(post_hits = n()) %>%
+  ungroup() %>%
+  right_join(distinct(events, event_team), by = "event_team") %>%
+  mutate(post_hits = replace_na(post_hits, 0))
+
+team_goal_method <- events %>%
+  filter(is_goal == 1) %>%
+  group_by(event_team, bodypart) %>%
+  summarize(method_goals = n()) %>%
+  spread(bodypart, method_goals, fill = 0) %>%
+  ungroup()
+
+team_goal_time_first15 <- events %>%
+  filter(is_goal == 1, events$time <= 15) %>%
+  group_by(event_team) %>%
+  summarize(total_goals = n()) %>%
+  ungroup()
+
+team_goal_time_last15 <- events %>%
+  filter(time >= 75 & time <= 90) %>%
+  group_by(event_team) %>%
+  summarize(total_goals = sum(is_goal == 1)) %>%
+  ungroup() %>%
+  right_join(distinct(events, event_team), by = "event_team") %>%
+  mutate(total_goals = replace_na(total_goals, 0))
+
+full_data <- data.frame(
+  team_goals$goals,
+  team_cards$cards,
+  team_post_hits$post_hits,
+  as.matrix(team_goal_method[, -1]),  # Exclude the event_team column
+  team_goal_time_first15$total_goals,
+  team_goal_time_last15$total_goals
+)
+
+
+```
+
+
+
+
+### Complete Linkage vs Single Linkage 
+```{r}
+
+# distance
+distance_matrix <- dist(full_data)
+
+# complete and single linkage
+hierarchical_complete <- hclust(distance_matrix, method = "complete")
+hierarchical_single <- hclust(distance_matrix, method = "single")
+
+# choosing k 
+num_clusters <- 3
+
+# clustering
+clusters_complete <- cutree(hierarchical_complete, k = num_clusters)
+clusters_single <- cutree(hierarchical_single, k = num_clusters)
+
+# cluster table
+cluster_table_complete <- data.frame(event_team = team_goals$event_team, cluster = clusters_complete)
+cluster_table_single <- data.frame(event_team = team_goals$event_team, cluster = clusters_single)
+
+# labeling
+labels <- team_goals$event_team
+
+
+par(mfrow = c(1, 3))
+
+# plotting + categorizing the clusters with label (complete)
+plot(hierarchical_complete, main = "Complete Linkage", xlab = "Teams", ylab = "Distance", labels = labels, hang = -1, cex = 0.8)
+rect.hclust(hierarchical_complete, k = num_clusters, border = num_clusters:1)
+
+
+#plotting + categorizing the clusters with label (single)
+plot(hierarchical_single, main = "Single Linkage", xlab = "Teams", ylab = "Distance", labels = labels, hang = -1, cex = 0.8)
+rect.hclust(hierarchical_single, k = num_clusters, border = num_clusters:1)
+
+# cluster tab
+print(cluster_table_complete)
+print(cluster_table_single)
+
+
+```
+
+
+
+
+
+
+
+#Complete Linkage is better so we do this again with another variable name
+```{r}
+
+
+hierarchical_cluster <- hclust(distance_matrix)
+
+
+num_clusters <- 3
+clusters <- cutree(hierarchical_cluster, k = num_clusters)
+
+
+cluster_table <- data.frame(event_team = team_goals$event_team, cluster = clusters)
+
+
+labels <- team_goals$event_team
+
+
+plot(hierarchical_cluster, main = "Hierarchical Clustering Dendrogram", xlab = "Teams", ylab = "Distance", labels = labels, hang = -1, cex = 0.8)
+
+
+rect.hclust(hierarchical_cluster, k = num_clusters, border = num_clusters:1)
+
+
+
+```
+
+
+#Printing Cluster Tables
+```{r}
+cluster_data <- data.frame(Cluster = c("Cluster 3", "Cluster 2", "Cluster 1"),
+                           Teams = c(paste(cluster_table$event_team[cluster_table$cluster == 3], collapse = ", "),
+                                     paste(cluster_table$event_team[cluster_table$cluster == 2], collapse = ", "),
+                                     paste(cluster_table$event_team[cluster_table$cluster == 1], collapse = ", ")))
+
+
+
+#Tables
+kable(cluster_data, format = "markdown", align = c("l", "l"), col.names = c("Cluster", "Teams"))
+```
+###We can see that Barcelona  "Bayern Munich" "Borussia Dortmund" "Juventus""Lyon""Napoli"Paris Saint-Germain" "Real Madrid" are dominating in terms of their playstyle at the moment.
+
+
+
+
+#Finding out optimum K 
+```{r}
+wssplot <- function(data, nc = 2:15, seed = 1) {
+  wss <- numeric(length(nc))
+  for (i in seq_along(nc)) {
+    set.seed(seed)
+    wss[i] <- sum(kmeans(data, centers = nc[i])$withinss)
+  }
+  plot(nc, wss, type = 'b', xlab = 'Number of Clusters', ylab = 'Within groups Sum of Squares')
+}
+
+data <- full_data  
+wssplot(data)
+
+```
+ 
+ 
+```{r}
+# k menas
+KM <- kmeans(full_data, 4, nstart = 20)
+
+# cluster assignment for each data pt
+cluster_assignments <- KM$cluster
+
+# data frame for plotting
+plot_data <- cbind(full_data, Cluster = cluster_assignments)
+
+# plotting
+autoplot(KM, data = plot_data, frame = TRUE, label = TRUE, label.size = 3)
+
+# cluster centers
+print(KM$centers)
+
+# table
+cluster_table <- data.frame(Team = unique(events$event_team), Cluster = cluster_assignments)
+
+# display table
+print(cluster_table)
+
+```
+
+
+#Who are in cluster 2?  
+```{r}
+# filtering the cluster_table for teams in cluster 2
+teams_in_cluster_2 <- cluster_table$Team[cluster_table$Cluster == 1]
+
+# priting the teams
+print(teams_in_cluster_2)
+```
+
